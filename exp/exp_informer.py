@@ -6,6 +6,7 @@ from utils.tools import EarlyStopping, adjust_learning_rate
 from utils.metrics import metric
 
 import numpy as np
+import json
 
 import torch
 import torch.nn as nn
@@ -70,6 +71,8 @@ class Exp_Informer(Exp_Basic):
             'Solar':Dataset_Custom,
             'custom':Dataset_Custom,
             'raw_static_wenzhou_dataset_201401':Dataset_wenzhou,
+            'raw_static_wenzhou_dataset_201401_2': Dataset_wenzhou,
+            'wenzhou_60m': Dataset_wenzhou,
         }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed!='timeF' else 1
@@ -111,12 +114,12 @@ class Exp_Informer(Exp_Basic):
         criterion =  nn.MSELoss()
         return criterion
 
-    def vali(self, vali_data, vali_loader, criterion):
+    def vali(self, vali_data, vali_loader, criterion, edge_index):
         self.model.eval()
         total_loss = []
         for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(vali_loader):
             pred, true = self._process_one_batch(
-                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark, edge_index)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
         total_loss = np.average(total_loss)
@@ -124,6 +127,13 @@ class Exp_Informer(Exp_Basic):
         return total_loss
 
     def train(self, setting):
+
+        with open(os.path.join(self.args.root_path, self.args.data_path), 'r') as load_f:
+            dataset = json.load(load_f)
+        indices = dataset["indices"][0]
+        weights = dataset["weights"][0]
+        adj_mx = torch.LongTensor(indices)
+
         train_data, train_loader = self._get_data(flag = 'train')
         vali_data, vali_loader = self._get_data(flag = 'val')
         test_data, test_loader = self._get_data(flag = 'test')
@@ -154,7 +164,7 @@ class Exp_Informer(Exp_Basic):
                 
                 model_optim.zero_grad()
                 pred, true = self._process_one_batch(
-                    train_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                    train_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx)
                 loss = criterion(pred, true)
                 train_loss.append(loss.item())
                 
@@ -177,8 +187,8 @@ class Exp_Informer(Exp_Basic):
 
             print("Epoch: {} cost time: {}".format(epoch+1, time.time()-epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+            vali_loss = self.vali(vali_data, vali_loader, criterion, adj_mx)
+            test_loss = self.vali(test_data, test_loader, criterion, adj_mx)
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
@@ -196,6 +206,12 @@ class Exp_Informer(Exp_Basic):
 
     def test(self, setting):
         test_data, test_loader = self._get_data(flag='test')
+
+        with open(os.path.join(self.args.root_path, self.args.data_path), 'r') as load_f:
+            dataset = json.load(load_f)
+        indices = dataset["indices"][0]
+        weights = dataset["weights"][0]
+        adj_mx = torch.LongTensor(indices)
         
         self.model.eval()
         
@@ -204,7 +220,7 @@ class Exp_Informer(Exp_Basic):
         
         for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(test_loader):
             pred, true = self._process_one_batch(
-                test_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                test_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
 
@@ -258,7 +274,8 @@ class Exp_Informer(Exp_Basic):
         
         return
 
-    def _process_one_batch(self, dataset_object, batch_x, batch_y, batch_x_mark, batch_y_mark):
+    def _process_one_batch(self, dataset_object, batch_x, batch_y, batch_x_mark, batch_y_mark, edge_index):
+        edge_index = edge_index.to(self.device)
         batch_x = batch_x.float().to(self.device)
         batch_y = batch_y.float()
 
@@ -282,7 +299,7 @@ class Exp_Informer(Exp_Basic):
             if self.args.output_attention:
                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
             else:
-                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index)
         if self.args.inverse:
             outputs = dataset_object.inverse_transform(outputs)
         f_dim = -1 if self.args.features=='MS' else 0

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch_geometric.nn.conv import GCNConv
 import torch.nn.functional as F
 import numpy as np
 
@@ -27,18 +28,25 @@ class PositionalEmbedding(nn.Module):
 class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
         super(TokenEmbedding, self).__init__()
-        padding = 1 if torch.__version__>='1.5.0' else 2
-        self.tokenConv = nn.Conv1d(in_channels=c_in, out_channels=d_model, 
-                                    kernel_size=3, padding=padding, padding_mode='circular') #
-        for m in self.modules():
-            if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight,mode='fan_in',nonlinearity='leaky_relu')
+        self.tokenConv = GCNConv(in_channels=1, out_channels=3)
+        self.linear = nn.Linear(3*c_in, d_model)
+        # padding = 1 if torch.__version__>='1.5.0' else 2
+        # self.tokenConv = nn.Conv1d(in_channels=c_in, out_channels=d_model,
+        #                             kernel_size=3, padding=padding, padding_mode='circular')
+        # for m in self.modules():
+        #     if isinstance(m, GCNConv):
+        #         nn.init.kaiming_normal_(m.weight,mode='fan_in',nonlinearity='leaky_relu')
 
-    def forward(self, x):
+    def forward(self, x, edge_index):
         y = x
-        x = self.tokenConv(x.permute(0, 2, 1)).transpose(1,2)
+        y = torch.unsqueeze(y, 3)
+        y = self.tokenConv(y, edge_index)
+
+        y = y.reshape(y.shape[0], y.shape[1], y.shape[2]*y.shape[3])
+
+        y = self.linear(y)
         # x = F.softmax(x, dim=-1)
-        return x
+        return y
 
 class FixedEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
@@ -106,7 +114,7 @@ class DataEmbedding(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, x, x_mark):
-        x = self.value_embedding(x) + self.position_embedding(x) + self.temporal_embedding(x_mark)
+    def forward(self, x, x_mark, edge_index):
+        x = self.value_embedding(x, edge_index) + self.position_embedding(x) + self.temporal_embedding(x_mark)
         
         return self.dropout(x)

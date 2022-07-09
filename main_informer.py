@@ -10,9 +10,9 @@ parser = argparse.ArgumentParser(description='[Informer] Long Sequences Forecast
 
 parser.add_argument('--model', type=str,  default='informer',help='model of experiment, options: [informer, informerstack, informerlight(TBD)]')
 
-parser.add_argument('--data', type=str,  default='raw_static_wenzhou_dataset_201401', help='data')
+parser.add_argument('--data', type=str,  default='raw_static_wenzhou_dataset_201401_2', help='data')
 parser.add_argument('--root_path', type=str, default='./data/', help='root path of the data file')
-parser.add_argument('--data_path', type=str, default='raw_static_wenzhou_dataset_201401.json', help='data file')
+parser.add_argument('--data_path', type=str, default='raw_static_wenzhou_dataset_201401_2.json', help='data file')
 parser.add_argument('--features', type=str, default='M', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
 parser.add_argument('--freq', type=str, default='h', help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
@@ -26,7 +26,7 @@ parser.add_argument('--pred_len', type=int, default=12, help='prediction sequenc
 parser.add_argument('--enc_in', type=int, default=node_num, help='encoder input size')
 parser.add_argument('--dec_in', type=int, default=node_num, help='decoder input size')
 parser.add_argument('--c_out', type=int, default=node_num, help='output size')
-parser.add_argument('--d_model', type=int, default=3072, help='dimension of model')  # 对显存影响很大，需大于n_heads
+parser.add_argument('--d_model', type=int, default=2560, help='dimension of model')  # 对显存影响很大，需大于n_heads
 parser.add_argument('--n_heads', type=int, default=node_num, help='num of heads')
 parser.add_argument('--e_layers', type=int, default=2, help='num of encoder layers')
 parser.add_argument('--d_layers', type=int, default=1, help='num of decoder layers')
@@ -46,14 +46,14 @@ parser.add_argument('--cols', type=str, nargs='+', help='certain cols from the d
 parser.add_argument('--num_workers', type=int, default=0, help='data loader num workers')
 parser.add_argument('--itr', type=int, default=1, help='experiments times')
 parser.add_argument('--train_epochs', type=int, default=100, help='train epochs')
-parser.add_argument('--batch_size', type=int, default=16, help='batch size of train input data')
-parser.add_argument('--patience', type=int, default=3, help='early stopping patience')
-parser.add_argument('--learning_rate', type=float, default=0.00001, help='optimizer learning rate')
+parser.add_argument('--batch_size', type=int, default=8, help='batch size of train input data')
+parser.add_argument('--patience', type=int, default=4, help='early stopping patience')
+parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
 parser.add_argument('--des', type=str, default='test',help='exp description')
 parser.add_argument('--loss', type=str, default='mse',help='loss function')
 parser.add_argument('--lradj', type=str, default='type1',help='adjust learning rate')
 parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
-parser.add_argument('--inverse', action='store_true', help='inverse output data', default=False)
+parser.add_argument('--inverse', action='store_true', help='inverse output data', default=True)
 
 parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')
 parser.add_argument('--gpu', type=int, default=0, help='gpu')
@@ -73,6 +73,10 @@ if args.use_gpu and args.use_multi_gpu:
 data_parser = {
     'ETTh1':{'data':'ETTh1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'raw_static_wenzhou_dataset_201401':{'data':'raw_static_wenzhou_dataset_201401.json','T':'_','M':[node_num,node_num,node_num],'S':[1,1,1],'MS':[node_num,node_num,1]},
+    'raw_static_wenzhou_dataset_201401_2': {'data': 'raw_static_wenzhou_dataset_201401_2.json', 'T': '_',
+                                          'M': [node_num, node_num, node_num], 'S': [1, 1, 1],
+                                          'MS': [node_num, node_num, 1]},
+    'wenzhou_60m': {'data': 'wenzhou_60m.json', 'T': '_','M': [node_num, node_num, node_num], 'S': [1, 1, 1], 'MS': [node_num, node_num, 1]},
     'ETTh2':{'data':'ETTh2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm1':{'data':'ETTm1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm2':{'data':'ETTm2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},

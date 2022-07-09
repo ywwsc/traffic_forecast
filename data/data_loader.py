@@ -228,13 +228,9 @@ class Dataset_wenzhou(Dataset):
             feature.append(dataset["feature"][time])
             date.append(time)
         feature = pd.DataFrame(feature)   # (744,2217)
-        cols_sums = feature.sum(axis=0)
-        cols_sums = cols_sums.loc[cols_sums[:] < 20].index.tolist()
-        # cols = feature.loc[:, (feature == 0).all(axis=0)].columns.tolist()
-        feature = feature.drop(cols_sums, axis=1)    # （744,1824），数据中存在全为0的坏样本使得后续计算loss时变为nan，去除坏样本（全为0的列）
-        # cols2 = feature.loc[:, (feature > 10000).any(axis=0)].columns.tolist()
-
-        # feature = feature.iloc[:, 0:1001]  # test
+        # cols_sums = feature.sum(axis=0)
+        # cols_sums = cols_sums.loc[cols_sums[:] < 20].index.tolist()
+        # feature = feature.drop(cols_sums, axis=1)    # （744,1824），数据中存在全为0的坏样本使得后续计算loss时变为nan，去除坏样本（全为0的列）
 
         feature.insert(loc=0, column='date', value=date)
         df_raw = feature
