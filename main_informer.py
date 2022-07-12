@@ -4,15 +4,16 @@ import torch
 
 from exp.exp_informer import Exp_Informer
 
-node_num = 1824
+node_num = 1683
 
 parser = argparse.ArgumentParser(description='[Informer] Long Sequences Forecasting')
 
 parser.add_argument('--model', type=str,  default='informer',help='model of experiment, options: [informer, informerstack, informerlight(TBD)]')
 
-parser.add_argument('--data', type=str,  default='raw_static_wenzhou_dataset_201401_2', help='data')
+parser.add_argument('--data', type=str,  default='wenzhou_60m', help='data')
 parser.add_argument('--root_path', type=str, default='./data/', help='root path of the data file')
-parser.add_argument('--data_path', type=str, default='raw_static_wenzhou_dataset_201401_2.json', help='data file')
+parser.add_argument('--data_path', type=str, default='wenzhou_15m.json', help='data file')
+parser.add_argument('--graph_data_path', type=str, default='adj_mx_wenzhou.json', help='graph data file')
 parser.add_argument('--features', type=str, default='M', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
 parser.add_argument('--freq', type=str, default='h', help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
@@ -76,7 +77,7 @@ data_parser = {
     'raw_static_wenzhou_dataset_201401_2': {'data': 'raw_static_wenzhou_dataset_201401_2.json', 'T': '_',
                                           'M': [node_num, node_num, node_num], 'S': [1, 1, 1],
                                           'MS': [node_num, node_num, 1]},
-    'wenzhou_60m': {'data': 'wenzhou_60m.json', 'T': '_','M': [node_num, node_num, node_num], 'S': [1, 1, 1], 'MS': [node_num, node_num, 1]},
+    'wenzhou_60m': {'data': 'wenzhou_15m.json', 'T': '_','M': [node_num, node_num, node_num], 'S': [1, 1, 1], 'MS': [node_num, node_num, 1]},
     'ETTh2':{'data':'ETTh2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm1':{'data':'ETTm1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm2':{'data':'ETTm2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
@@ -101,7 +102,7 @@ Exp = Exp_Informer
 
 for ii in range(args.itr):
     # setting record of experiments
-    setting = '{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_at{}_fc{}_eb{}_dt{}_mx{}_{}_{}'.format(args.model, args.data, args.features, 
+    setting = '{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_at{}_fc{}_eb{}_dt{}_mx{}_{}_{}'.format(args.model, args.data, args.features,
                 args.seq_len, args.label_len, args.pred_len,
                 args.d_model, args.n_heads, args.e_layers, args.d_layers, args.d_ff, args.attn, args.factor, 
                 args.embed, args.distil, args.mix, args.des, ii)

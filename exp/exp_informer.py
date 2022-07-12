@@ -1,4 +1,4 @@
-from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou
+from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou, Dataset_wenzhou_60m
 from exp.exp_basic import Exp_Basic
 from models.model import Informer, InformerStack
 
@@ -72,7 +72,7 @@ class Exp_Informer(Exp_Basic):
             'custom':Dataset_Custom,
             'raw_static_wenzhou_dataset_201401':Dataset_wenzhou,
             'raw_static_wenzhou_dataset_201401_2': Dataset_wenzhou,
-            'wenzhou_60m': Dataset_wenzhou,
+            'wenzhou_60m': Dataset_wenzhou_60m,
         }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed!='timeF' else 1
@@ -128,10 +128,10 @@ class Exp_Informer(Exp_Basic):
 
     def train(self, setting):
 
-        with open(os.path.join(self.args.root_path, self.args.data_path), 'r') as load_f:
+        with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
             dataset = json.load(load_f)
-        indices = dataset["indices"][0]
-        weights = dataset["weights"][0]
+        indices = dataset["indices"]
+        weights = dataset["weights"]
         adj_mx = torch.LongTensor(indices)
 
         train_data, train_loader = self._get_data(flag = 'train')
@@ -207,10 +207,10 @@ class Exp_Informer(Exp_Basic):
     def test(self, setting):
         test_data, test_loader = self._get_data(flag='test')
 
-        with open(os.path.join(self.args.root_path, self.args.data_path), 'r') as load_f:
+        with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
             dataset = json.load(load_f)
-        indices = dataset["indices"][0]
-        weights = dataset["weights"][0]
+        indices = dataset["indices"]
+        weights = dataset["weights"]
         adj_mx = torch.LongTensor(indices)
         
         self.model.eval()
