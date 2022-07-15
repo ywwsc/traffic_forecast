@@ -41,7 +41,7 @@ class TokenEmbedding(nn.Module):
         y = x
         y = torch.unsqueeze(y, 3)
         y = self.tokenConv(y, edge_index)
-
+        y = F.relu(y)
         y = y.reshape(y.shape[0], y.shape[1], y.shape[2]*y.shape[3])
 
         y = self.linear(y)

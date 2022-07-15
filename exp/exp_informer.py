@@ -1,4 +1,4 @@
-from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou, Dataset_wenzhou_60m
+from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou, Dataset_wenzhou_60m, Dataset_PEMS
 from exp.exp_basic import Exp_Basic
 from models.model import Informer, InformerStack
 
@@ -7,11 +7,13 @@ from utils.metrics import metric
 
 import numpy as np
 import json
+import csv
 
 import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
+from torch_geometric.utils import dense_to_sparse
 
 import os
 import time
@@ -73,6 +75,7 @@ class Exp_Informer(Exp_Basic):
             'raw_static_wenzhou_dataset_201401':Dataset_wenzhou,
             'raw_static_wenzhou_dataset_201401_2': Dataset_wenzhou,
             'wenzhou_60m': Dataset_wenzhou_60m,
+            'PEMS': Dataset_PEMS,
         }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed!='timeF' else 1
@@ -127,12 +130,23 @@ class Exp_Informer(Exp_Basic):
         return total_loss
 
     def train(self, setting):
-
-        with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
-            dataset = json.load(load_f)
-        indices = dataset["indices"]
-        weights = dataset["weights"]
-        adj_mx = torch.LongTensor(indices)
+        A = np.zeros((307, 307),
+                     dtype=np.float32)
+        with open('./data/PEMS04.csv', 'r') as f:
+            f.readline()
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) != 3:
+                    continue
+                i, j, distance = int(row[0]), int(row[1]), float(row[2])
+                A[i, j] = 1
+        # with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
+        #     dataset = json.load(load_f)
+        # indices = dataset["indices"]
+        # weights = dataset["weights"]
+        adj_static = torch.from_numpy(A)
+        print('node_num:', A.shape[0])
+        adj_mx, wights = dense_to_sparse(adj_static)
 
         train_data, train_loader = self._get_data(flag = 'train')
         vali_data, vali_loader = self._get_data(flag = 'val')
@@ -207,11 +221,23 @@ class Exp_Informer(Exp_Basic):
     def test(self, setting):
         test_data, test_loader = self._get_data(flag='test')
 
-        with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
-            dataset = json.load(load_f)
-        indices = dataset["indices"]
-        weights = dataset["weights"]
-        adj_mx = torch.LongTensor(indices)
+        A = np.zeros((307, 307),
+                     dtype=np.float32)
+        with open('./data/PEMS04.csv', 'r') as f:
+            f.readline()
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) != 3:
+                    continue
+                i, j, distance = int(row[0]), int(row[1]), float(row[2])
+                A[i, j] = 1
+        # with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
+        #     dataset = json.load(load_f)
+        # indices = dataset["indices"]
+        # weights = dataset["weights"]
+        adj_static = torch.from_numpy(A)
+        print('node_num:', A.shape[0])
+        adj_mx, wights = dense_to_sparse(adj_static)
         
         self.model.eval()
         

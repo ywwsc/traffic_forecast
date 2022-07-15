@@ -4,15 +4,15 @@ import torch
 
 from exp.exp_informer import Exp_Informer
 
-node_num = 1683
+node_num = 307
 
 parser = argparse.ArgumentParser(description='[Informer] Long Sequences Forecasting')
 
 parser.add_argument('--model', type=str,  default='informer',help='model of experiment, options: [informer, informerstack, informerlight(TBD)]')
 
-parser.add_argument('--data', type=str,  default='wenzhou_60m', help='data')
+parser.add_argument('--data', type=str,  default='PEMS', help='data')
 parser.add_argument('--root_path', type=str, default='./data/', help='root path of the data file')
-parser.add_argument('--data_path', type=str, default='wenzhou_15m.json', help='data file')
+parser.add_argument('--data_path', type=str, default='PEMS04.npz', help='data file')
 parser.add_argument('--graph_data_path', type=str, default='adj_mx_wenzhou.json', help='graph data file')
 parser.add_argument('--features', type=str, default='M', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
@@ -27,7 +27,7 @@ parser.add_argument('--pred_len', type=int, default=12, help='prediction sequenc
 parser.add_argument('--enc_in', type=int, default=node_num, help='encoder input size')
 parser.add_argument('--dec_in', type=int, default=node_num, help='decoder input size')
 parser.add_argument('--c_out', type=int, default=node_num, help='output size')
-parser.add_argument('--d_model', type=int, default=2560, help='dimension of model')  # 对显存影响很大，需大于n_heads
+parser.add_argument('--d_model', type=int, default=512, help='dimension of model')  # 对显存影响很大，需大于n_heads
 parser.add_argument('--n_heads', type=int, default=node_num, help='num of heads')
 parser.add_argument('--e_layers', type=int, default=2, help='num of encoder layers')
 parser.add_argument('--d_layers', type=int, default=1, help='num of decoder layers')
@@ -78,6 +78,7 @@ data_parser = {
                                           'M': [node_num, node_num, node_num], 'S': [1, 1, 1],
                                           'MS': [node_num, node_num, 1]},
     'wenzhou_60m': {'data': 'wenzhou_15m.json', 'T': '_','M': [node_num, node_num, node_num], 'S': [1, 1, 1], 'MS': [node_num, node_num, 1]},
+    'PEMS': {'data': 'PEMS04.npz', 'T': '_','M': [node_num, node_num, node_num], 'S': [1, 1, 1], 'MS': [node_num, node_num, 1]},
     'ETTh2':{'data':'ETTh2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm1':{'data':'ETTm1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm2':{'data':'ETTm2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
