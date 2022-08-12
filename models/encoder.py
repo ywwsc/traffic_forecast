@@ -62,11 +62,11 @@ class Encoder(nn.Module):
 
     def forward(self, x, attn_mask=None):
         # x [B, L, D]
-        attns = []
+        attns = []  # 记录每层attention的结果
         if self.conv_layers is not None:
             for attn_layer, conv_layer in zip(self.attn_layers, self.conv_layers):
                 x, attn = attn_layer(x, attn_mask=attn_mask)
-                x = conv_layer(x)
+                x = conv_layer(x)  # 进行Self-attention distilling来减小内存的占用 x:[batch_size, seq_len/2, d_model]
                 attns.append(attn)
             x, attn = self.attn_layers[-1](x, attn_mask=attn_mask)
             attns.append(attn)

@@ -387,7 +387,7 @@ class Dataset_PEMS(Dataset):
             data = df_data.values
 
         df_stamp = df_raw[['date']][border1:border2]
-        df_stamp = np.array(df_stamp.values)
+        df_stamp = np.array(df_stamp.values) // 12  # PEMS为五分钟一次采样得到的数据集
         data_stamp = (df_stamp % 24 - 12) / 24
         data_stamp_weekend = (df_stamp % (24 * 7) - (12 * 7)) / (24 * 7)
         data_stamp_weekend = np.squeeze(data_stamp_weekend, axis=1)

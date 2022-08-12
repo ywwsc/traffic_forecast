@@ -16,7 +16,7 @@ class FullAttention(nn.Module):
         self.dropout = nn.Dropout(attention_dropout)
         
     def forward(self, queries, keys, values, attn_mask):
-        B, L, H, E = queries.shape
+        B, L, H, E = queries.shape  # batch_size, seq_len, head_num, dim_feature
         _, S, _, D = values.shape
         scale = self.scale or 1./sqrt(E)
 
@@ -158,6 +158,6 @@ class AttentionLayer(nn.Module):
         )
         if self.mix:
             out = out.transpose(2,1).contiguous()
-        out = out.view(B, L, -1)
+        out = out.view(B, L, -1)  # out的维度应该是[batch_size, seq_len, d_values*n_heads]
 
         return self.out_projection(out), attn
