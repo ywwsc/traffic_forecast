@@ -1,6 +1,6 @@
 from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou, Dataset_wenzhou_60m, Dataset_PEMS
 from exp.exp_basic import Exp_Basic
-from models.model import Informer, InformerStack
+from models.model import Informer, InformerStack, Autoformer
 
 from utils.tools import EarlyStopping, adjust_learning_rate
 from utils.metrics import metric
@@ -21,14 +21,15 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
-class Exp_Informer(Exp_Basic):
+class Exp_Main(Exp_Basic):
     def __init__(self, args):
-        super(Exp_Informer, self).__init__(args)
+        super(Exp_Main, self).__init__(args)
     
     def _build_model(self):
         model_dict = {
             'informer':Informer,
             'informerstack':InformerStack,
+            'autoformer': Autoformer,
         }
         if self.args.model=='informer' or self.args.model=='informerstack':
             e_layers = self.args.e_layers if self.args.model=='informer' else self.args.s_layers
@@ -53,8 +54,13 @@ class Exp_Informer(Exp_Basic):
                 self.args.output_attention,
                 self.args.distil,
                 self.args.mix,
-                self.device
+                self.device,
+                self.args.data_path,
+                self.args.graph_data_path,
+                self.args.poi
             ).float()
+        elif self.args.model=='autoformer':
+            model = model_dict[self.args.model](self.args).float()
         
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -117,12 +123,12 @@ class Exp_Informer(Exp_Basic):
         criterion =  nn.MSELoss()
         return criterion
 
-    def vali(self, vali_data, vali_loader, criterion, edge_index):
+    def vali(self, vali_data, vali_loader, criterion, edge_index, weights):
         self.model.eval()
         total_loss = []
         for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(vali_loader):
             pred, true = self._process_one_batch(
-                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark, edge_index)
+                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark, edge_index, weights)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
         total_loss = np.average(total_loss)
@@ -130,23 +136,31 @@ class Exp_Informer(Exp_Basic):
         return total_loss
 
     def train(self, setting):
-        A = np.zeros((307, 307),
-                     dtype=np.float32)
-        with open('./data/PEMS04.csv', 'r') as f:
-            f.readline()
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) != 3:
-                    continue
-                i, j, distance = int(row[0]), int(row[1]), float(row[2])
-                A[i, j] = 1
-        # with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
-        #     dataset = json.load(load_f)
-        # indices = dataset["indices"]
-        # weights = dataset["weights"]
-        adj_static = torch.from_numpy(A)
-        print('node_num:', A.shape[0])
-        adj_mx, wights = dense_to_sparse(adj_static)
+
+        # 邻接矩阵提取
+        if self.args.graph_data_path[-3:] == 'csv':
+            A = np.zeros((self.args.enc_in, self.args.enc_in),
+                         dtype=np.float32)
+            with open('./data/'+self.args.graph_data_path, 'r') as f:
+                f.readline()
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) != 3:
+                        continue
+                    i, j, distance = int(row[0]), int(row[1]), float(row[2])
+                    A[i, j] = 1
+
+            adj_static = torch.from_numpy(A)
+            print('node_num:', A.shape[0])
+            adj_mx, weights = dense_to_sparse(adj_static)
+        else:
+            with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
+                dataset = json.load(load_f)
+            indices = dataset["indices"]
+            weights = dataset["weights"]
+            adj_mx = torch.LongTensor(indices)
+            weights = torch.FloatTensor(weights)
+
 
         train_data, train_loader = self._get_data(flag = 'train')
         vali_data, vali_loader = self._get_data(flag = 'val')
@@ -178,7 +192,7 @@ class Exp_Informer(Exp_Basic):
                 
                 model_optim.zero_grad()
                 pred, true = self._process_one_batch(
-                    train_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx)
+                    train_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx, weights)
                 loss = criterion(pred, true)
                 train_loss.append(loss.item())
                 
@@ -201,8 +215,8 @@ class Exp_Informer(Exp_Basic):
 
             print("Epoch: {} cost time: {}".format(epoch+1, time.time()-epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion, adj_mx)
-            test_loss = self.vali(test_data, test_loader, criterion, adj_mx)
+            vali_loss = self.vali(vali_data, vali_loader, criterion, adj_mx, weights)
+            test_loss = self.vali(test_data, test_loader, criterion, adj_mx, weights)
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
@@ -221,23 +235,29 @@ class Exp_Informer(Exp_Basic):
     def test(self, setting):
         test_data, test_loader = self._get_data(flag='test')
 
-        A = np.zeros((307, 307),
-                     dtype=np.float32)
-        with open('./data/PEMS04.csv', 'r') as f:
-            f.readline()
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) != 3:
-                    continue
-                i, j, distance = int(row[0]), int(row[1]), float(row[2])
-                A[i, j] = 1
-        # with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
-        #     dataset = json.load(load_f)
-        # indices = dataset["indices"]
-        # weights = dataset["weights"]
-        adj_static = torch.from_numpy(A)
-        print('node_num:', A.shape[0])
-        adj_mx, wights = dense_to_sparse(adj_static)
+        # 邻接矩阵提取
+        if self.args.graph_data_path[-3:] == 'csv':
+            A = np.zeros((self.args.enc_in, self.args.enc_in),
+                         dtype=np.float32)
+            with open('./data/' + self.args.graph_data_path, 'r') as f:
+                f.readline()
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) != 3:
+                        continue
+                    i, j, distance = int(row[0]), int(row[1]), float(row[2])
+                    A[i, j] = 1
+
+            adj_static = torch.from_numpy(A)
+            print('node_num:', A.shape[0])
+            adj_mx, weights = dense_to_sparse(adj_static)
+        else:
+            with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
+                dataset = json.load(load_f)
+            indices = dataset["indices"]
+            weights = dataset["weights"]
+            adj_mx = torch.LongTensor(indices)
+            weights = torch.FloatTensor(weights)
         
         self.model.eval()
         
@@ -246,7 +266,7 @@ class Exp_Informer(Exp_Basic):
         
         for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(test_loader):
             pred, true = self._process_one_batch(
-                test_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx)
+                test_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx, weights)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
 
@@ -300,8 +320,9 @@ class Exp_Informer(Exp_Basic):
         
         return
 
-    def _process_one_batch(self, dataset_object, batch_x, batch_y, batch_x_mark, batch_y_mark, edge_index):
+    def _process_one_batch(self, dataset_object, batch_x, batch_y, batch_x_mark, batch_y_mark, edge_index, weights):
         edge_index = edge_index.to(self.device)
+        weights = weights.to(self.device)
         batch_x = batch_x.float().to(self.device)
         batch_y = batch_y.float()
 
@@ -325,7 +346,12 @@ class Exp_Informer(Exp_Basic):
             if self.args.output_attention:
                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
             else:
-                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index)
+                if self.args.poi:
+                    poi_data = np.load('C:/Users/admin/Desktop/traffic_forecast/data/wenzhou_poi.npy')
+                    poi_data = torch.from_numpy(poi_data).to(self.device)
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index, weights, poi_data)
+                else:
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index, weights)
         if self.args.inverse:
             outputs = dataset_object.inverse_transform(outputs)
         f_dim = -1 if self.args.features=='MS' else 0
