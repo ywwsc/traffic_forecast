@@ -4,16 +4,16 @@ import torch
 
 from exp.exp_main import Exp_Main
 
-node_num = 1683  # PEMS:307,wenzhou：1683
+node_num = 307  # PEMS:307,wenzhou：1683
 
 parser = argparse.ArgumentParser(description='[Informer] Long Sequences Forecasting')
 
 parser.add_argument('--model', type=str,  default='informer',help='model of experiment, options: [informer, informerstack, informerlight(TBD), autoformer]')
 
-parser.add_argument('--data', type=str,  default='wenzhou_60m', help='data')
+parser.add_argument('--data', type=str,  default='PEMS04', help='data')
 parser.add_argument('--root_path', type=str, default='./data/', help='root path of the data file')
-parser.add_argument('--data_path', type=str, default='wenzhou_60m.json', help='data file')
-parser.add_argument('--graph_data_path', type=str, default='adj_mx_wenzhou.json', help='graph data file')
+parser.add_argument('--data_path', type=str, default='PEMS04.npz', help='data file')
+parser.add_argument('--graph_data_path', type=str, default='PEMS04.csv', help='graph data file')
 parser.add_argument('--features', type=str, default='M', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
 parser.add_argument('--freq', type=str, default='h', help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
@@ -27,12 +27,12 @@ parser.add_argument('--pred_len', type=int, default=12, help='prediction sequenc
 parser.add_argument('--enc_in', type=int, default=node_num, help='encoder input size')
 parser.add_argument('--dec_in', type=int, default=node_num, help='decoder input size')
 parser.add_argument('--c_out', type=int, default=node_num, help='output size')
-parser.add_argument('--d_model', type=int, default=2048, help='dimension of model')
+parser.add_argument('--d_model', type=int, default=512, help='dimension of model')
 parser.add_argument('--n_heads', type=int, default=8, help='num of heads')
 parser.add_argument('--e_layers', type=int, default=2, help='num of encoder layers')
 parser.add_argument('--d_layers', type=int, default=1, help='num of decoder layers')
 parser.add_argument('--s_layers', type=str, default='3,2,1', help='num of stack encoder layers')
-parser.add_argument('--d_ff', type=int, default=2048, help='dimension of fcn')
+parser.add_argument('--d_ff', type=int, default=512, help='dimension of fcn')
 parser.add_argument('--moving_avg', type=int, default=25, help='window size of moving average')
 parser.add_argument('--factor', type=int, default=1, help='probsparse attn factor')
 parser.add_argument('--padding', type=int, default=0, help='padding type')
@@ -46,7 +46,7 @@ parser.add_argument('--do_predict', action='store_true', help='whether to predic
 parser.add_argument('--mix', action='store_false', help='use mix attention in generative decoder', default=True)
 parser.add_argument('--cols', type=str, nargs='+', help='certain cols from the data files as the input features')
 parser.add_argument('--num_workers', type=int, default=0, help='data loader num workers')
-parser.add_argument('--itr', type=int, default=3, help='experiments times')
+parser.add_argument('--itr', type=int, default=1, help='experiments times')
 parser.add_argument('--train_epochs', type=int, default=100, help='train epochs')
 parser.add_argument('--batch_size', type=int, default=8, help='batch size of train input data')
 parser.add_argument('--patience', type=int, default=5, help='early stopping patience')

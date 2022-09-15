@@ -6,7 +6,7 @@ import numpy as np
 from utils.masking import TriangularCausalMask, ProbMask
 from models.encoder import Encoder, EncoderLayer, ConvLayer, EncoderStack
 from models.decoder import Decoder, DecoderLayer
-from models.attn import FullAttention, ProbAttention, AttentionLayer, AutoCorrelation
+from models.attn import FullAttention, ProbAttention, AttentionLayer, AutoCorrelation, ExternalAttention
 from models.Autoformer_EncDec import Autof_Encoder, Autof_Decoder, Autof_EncoderLayer, Autof_DecoderLayer, my_Layernorm, series_decomp
 from models.embed import DataEmbedding, DataEmbedding_wo_pos
 
@@ -67,6 +67,9 @@ class Informer(nn.Module):
             ],
             norm_layer=torch.nn.LayerNorm(d_model)
         )
+        if poi is True:
+            self.decoder.layers.append(ExternalAttention(d_model, n_heads, scale=False, attention_dropout=dropout,
+                                                         output_attention=False, mix=False))
         # self.end_conv1 = nn.Conv1d(in_channels=label_len+out_len, out_channels=out_len, kernel_size=1, bias=True)
         # self.end_conv2 = nn.Conv1d(in_channels=d_model, out_channels=c_out, kernel_size=1, bias=True)
         self.projection = nn.Linear(d_model, c_out, bias=True)
@@ -77,7 +80,7 @@ class Informer(nn.Module):
         enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
 
         dec_out = self.dec_embedding(x_dec, x_mark_dec, edge_index, weights)
-        dec_out = self.decoder(dec_out, enc_out, x_mask=dec_self_mask, cross_mask=dec_enc_mask)
+        dec_out = self.decoder(dec_out, enc_out, x_mask=dec_self_mask, cross_mask=dec_enc_mask, poi_data=poi_data)
         dec_out = self.projection(dec_out)
         
         # dec_out = self.end_conv1(dec_out)

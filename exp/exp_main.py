@@ -81,7 +81,7 @@ class Exp_Main(Exp_Basic):
             'raw_static_wenzhou_dataset_201401':Dataset_wenzhou,
             'raw_static_wenzhou_dataset_201401_2': Dataset_wenzhou,
             'wenzhou_60m': Dataset_wenzhou_60m,
-            'PEMS': Dataset_PEMS,
+            'PEMS04': Dataset_PEMS,
         }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed!='timeF' else 1
@@ -347,7 +347,7 @@ class Exp_Main(Exp_Basic):
                 outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
             else:
                 if self.args.poi:
-                    poi_data = np.load('C:/Users/admin/Desktop/traffic_forecast/data/wenzhou_poi.npy')
+                    poi_data = np.load('C:/Users/admin/Desktop/traffic_forecast/data/wenzhou_poi.npy').astype(np.float32)
                     poi_data = torch.from_numpy(poi_data).to(self.device)
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index, weights, poi_data)
                 else:

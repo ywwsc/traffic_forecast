@@ -41,10 +41,14 @@ class Decoder(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.norm = norm_layer
 
-    def forward(self, x, cross, x_mask=None, cross_mask=None):
-        for layer in self.layers:
-            x = layer(x, cross, x_mask=x_mask, cross_mask=cross_mask)
-
+    def forward(self, x, cross, x_mask=None, cross_mask=None, poi_data=None):
+        if poi_data is not None:
+            for layer in self.layers[:-1]:
+                x = layer(x, cross, x_mask=x_mask, cross_mask=cross_mask)
+            x = self.layers[-1](x, poi_data)
+        else:
+            for layer in self.layers:
+                x = layer(x, cross, x_mask=x_mask, cross_mask=cross_mask)
         if self.norm is not None:
             x = self.norm(x)
 
