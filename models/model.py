@@ -2,28 +2,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import time
 
 from utils.masking import TriangularCausalMask, ProbMask
+from utils.tools import norm_Adj
 from models.encoder import Encoder, EncoderLayer, ConvLayer, EncoderStack
 from models.decoder import Decoder, DecoderLayer
 from models.attn import FullAttention, ProbAttention, AttentionLayer, AutoCorrelation, ExternalAttention
 from models.Autoformer_EncDec import Autof_Encoder, Autof_Decoder, Autof_EncoderLayer, Autof_DecoderLayer, my_Layernorm, series_decomp
 from models.embed import DataEmbedding, DataEmbedding_wo_pos
+from models.DGCN import spatialAttentionScaledGCN, Spatial_Attention_layer, PositionWiseGCNFeedForward
+
 
 class Informer(nn.Module):
     def __init__(self, enc_in, dec_in, c_out, seq_len, label_len, out_len, 
                 factor=5, d_model=512, n_heads=8, e_layers=3, d_layers=2, d_ff=512, 
                 dropout=0.0, attn='prob', embed='fixed', freq='h', activation='gelu', 
                 output_attention = False, distil=True, mix=True,
-                device=torch.device('cuda:0'), data_path='', graph_data_path='', poi=False):
+                device=torch.device('cuda:0'), data_path='', graph_data_path='', poi=False, node_num=0):
         super(Informer, self).__init__()
         self.pred_len = out_len
         self.attn = attn
         self.output_attention = output_attention
 
         # Encoding
-        self.enc_embedding = DataEmbedding(enc_in, d_model, embed, freq, dropout, poi)
-        self.dec_embedding = DataEmbedding(dec_in, d_model, embed, freq, dropout, poi)
+        self.enc_embedding = DataEmbedding(enc_in, d_model, embed, freq, dropout, poi, node_num)
+        self.dec_embedding = DataEmbedding(dec_in, d_model, embed, freq, dropout, poi, node_num)
         # Attention
         if attn == 'prob':
             Attn = ProbAttention
@@ -38,6 +42,8 @@ class Informer(nn.Module):
                     AttentionLayer(Attn(False, factor, attention_dropout=dropout, output_attention=output_attention), 
                                 d_model, n_heads, mix=False),
                     d_model,
+                    PositionWiseGCNFeedForward(spatialAttentionScaledGCN(d_model, d_model),
+                                               dropout=dropout),
                     d_ff,
                     dropout=dropout,
                     activation=activation
@@ -56,9 +62,11 @@ class Informer(nn.Module):
                 DecoderLayer(
                     AttentionLayer(Attn(True, factor, attention_dropout=dropout, output_attention=False), 
                                 d_model, n_heads, mix=mix),
-                    AttentionLayer(FullAttention(False, factor, attention_dropout=dropout, output_attention=False), 
+                    AttentionLayer(Attn(False, factor, attention_dropout=dropout, output_attention=False),
                                 d_model, n_heads, mix=False),
                     d_model,
+                    PositionWiseGCNFeedForward(spatialAttentionScaledGCN(d_model, d_model),
+                                               dropout=dropout),
                     d_ff,
                     dropout=dropout,
                     activation=activation,
@@ -76,19 +84,30 @@ class Informer(nn.Module):
         
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, edge_index, weights, poi_data=None,
                 enc_self_mask=None, dec_self_mask=None, dec_enc_mask=None):
+        # en_emb = time.perf_counter()
         enc_out = self.enc_embedding(x_enc, x_mark_enc, edge_index, weights)
-        enc_out, attns = self.encoder(enc_out, attn_mask=enc_self_mask)
+        # encodertime = time.perf_counter()
+        # print('enc_embedding',encodertime - en_emb)
+        enc_out, attns = self.encoder(enc_out, edge_index, weights, attn_mask=enc_self_mask)
+        # encoderendtime = time.perf_counter()
+        # print('encoder', encoderendtime - encodertime)
 
         dec_out = self.dec_embedding(x_dec, x_mark_dec, edge_index, weights)
-        dec_out = self.decoder(dec_out, enc_out, x_mask=dec_self_mask, cross_mask=dec_enc_mask, poi_data=poi_data)
+        # de_embtime = time.perf_counter()
+        # print('de_embtime', de_embtime - encoderendtime)
+        dec_out = self.decoder(dec_out, enc_out, edge_index, weights, x_mask=dec_self_mask, cross_mask=dec_enc_mask, poi_data=poi_data)
+        # decodertime = time.perf_counter()
+        # print('decodertime', decodertime - de_embtime)
         dec_out = self.projection(dec_out)
+        # decoderouttime = time.perf_counter()
+        # print('outtime', decoderouttime - decodertime)
         
         # dec_out = self.end_conv1(dec_out)
         # dec_out = self.end_conv2(dec_out.transpose(2,1)).transpose(1,2)
         if self.output_attention:
-            return dec_out[:,-self.pred_len:,:], attns
+            return dec_out[:,:,-self.pred_len:,:], attns
         else:
-            return dec_out[:,-self.pred_len:,:] # [B, L, D]
+            return dec_out[:,:,-self.pred_len:,:] # [B, L, D]
 
 
 class InformerStack(nn.Module):

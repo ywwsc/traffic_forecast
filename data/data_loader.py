@@ -364,8 +364,8 @@ class Dataset_PEMS(Dataset):
         '''
 
 
-        num_train = int(len(df_raw) * 0.8)
-        num_test = int(len(df_raw) * 0.1)
+        num_train = int(len(df_raw) * 0.6)
+        num_test = int(len(df_raw) * 0.2)
         num_vali = len(df_raw) - num_train - num_test
         border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
         border2s = [num_train, num_train + num_vali, len(df_raw)]
@@ -382,9 +382,10 @@ class Dataset_PEMS(Dataset):
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
+            data = data[:, :, np.newaxis]
             # data = np.nan_to_num(data)
         else:
-            data = df_data.values
+            data = df_data.values[:, :, np.newaxis]
 
         df_stamp = df_raw[['date']][border1:border2]
         df_stamp = np.array(df_stamp.values) // 12  # PEMS为五分钟一次采样得到的数据集
@@ -405,7 +406,7 @@ class Dataset_PEMS(Dataset):
 
         self.data_x = data[border1:border2]
         if self.inverse:
-            self.data_y = df_data.values[border1:border2]
+            self.data_y = df_data.values[border1:border2][:, :, np.newaxis]
         else:
             self.data_y = data[border1:border2]
         self.data_stamp = data_stamp

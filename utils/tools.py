@@ -1,6 +1,31 @@
 import numpy as np
 import torch
 
+def norm_Adj(adj, wights, x):
+    '''
+    compute  normalized Adj matrix
+
+    Parameters
+    ----------
+    W: np.ndarray, shape is (N, N), N is the num of vertices
+
+    Returns
+    ----------
+    normalized Adj matrix: (D^hat)^{-1} A^hat; np.ndarray, shape (N, N)
+    '''
+
+    x_sh = x.shape[1]
+    edge_shape = np.zeros((x_sh, x_sh)).shape
+    # value = th.FloatTensor(np.ones(edge.shape[1]))
+    W = torch.sparse_coo_tensor(adj, wights, edge_shape).to_dense()
+
+    N = W.shape[0]
+    W = W.cpu().numpy() + np.identity(N)  # 为邻接矩阵加上自连接
+    D = np.diag(1.0/np.sum(W, axis=1))
+    norm_Adj_matrix = np.dot(D, W)
+
+    return norm_Adj_matrix
+
 def adjust_learning_rate(optimizer, epoch, args):
     # lr = args.learning_rate * (0.2 ** (epoch // 2))
     if args.lradj=='type1':

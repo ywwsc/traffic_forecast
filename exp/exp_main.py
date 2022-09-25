@@ -57,7 +57,8 @@ class Exp_Main(Exp_Basic):
                 self.device,
                 self.args.data_path,
                 self.args.graph_data_path,
-                self.args.poi
+                self.args.poi,
+                self.args.node_num
             ).float()
         elif self.args.model=='autoformer':
             model = model_dict[self.args.model](self.args).float()
@@ -139,7 +140,7 @@ class Exp_Main(Exp_Basic):
 
         # 邻接矩阵提取
         if self.args.graph_data_path[-3:] == 'csv':
-            A = np.zeros((self.args.enc_in, self.args.enc_in),
+            A = np.zeros((self.args.node_num, self.args.node_num),
                          dtype=np.float32)
             with open('./data/'+self.args.graph_data_path, 'r') as f:
                 f.readline()
@@ -189,7 +190,6 @@ class Exp_Main(Exp_Basic):
             epoch_time = time.time()
             for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(train_loader):
                 iter_count += 1
-                
                 model_optim.zero_grad()
                 pred, true = self._process_one_batch(
                     train_data, batch_x, batch_y, batch_x_mark, batch_y_mark, adj_mx, weights)
@@ -237,7 +237,7 @@ class Exp_Main(Exp_Basic):
 
         # 邻接矩阵提取
         if self.args.graph_data_path[-3:] == 'csv':
-            A = np.zeros((self.args.enc_in, self.args.enc_in),
+            A = np.zeros((self.args.node_num, self.args.node_num),
                          dtype=np.float32)
             with open('./data/' + self.args.graph_data_path, 'r') as f:
                 f.readline()
@@ -331,10 +331,16 @@ class Exp_Main(Exp_Basic):
 
         # decoder input
         if self.args.padding==0:
-            dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
+            dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-2], batch_y.shape[-1]]).float()
         elif self.args.padding==1:
-            dec_inp = torch.ones([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
+            dec_inp = torch.ones([batch_y.shape[0], self.args.pred_len, batch_y.shape[-2], batch_y.shape[-1]]).float()
         dec_inp = torch.cat([batch_y[:,:self.args.label_len,:], dec_inp], dim=1).float().to(self.device)
+
+        # (batch_size, T, N, F_in)->(batch_size, N, T, F_in)
+        batch_x = batch_x.permute(0, 2, 1, 3)
+        batch_y = batch_y.permute(0, 2, 1, 3)
+        dec_inp = dec_inp.permute(0, 2, 1, 3)
+
         # encoder - decoder
         if self.args.use_amp:
             with torch.cuda.amp.autocast():
@@ -353,8 +359,9 @@ class Exp_Main(Exp_Basic):
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index, weights)
         if self.args.inverse:
-            outputs = dataset_object.inverse_transform(outputs)
+            outputs = dataset_object.inverse_transform(outputs.squeeze().permute(0, 2, 1))
+            outputs = outputs.permute(0, 2, 1).unsqueeze(-1)
         f_dim = -1 if self.args.features=='MS' else 0
-        batch_y = batch_y[:,-self.args.pred_len:,f_dim:].to(self.device)
+        batch_y = batch_y[:,:,-self.args.pred_len:,f_dim:].to(self.device)
 
         return outputs, batch_y

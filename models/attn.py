@@ -1,5 +1,5 @@
 import math
-
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -191,23 +191,31 @@ class AutoCorrelation(nn.Module):
         SpeedUp version of Autocorrelation (a batch-normalization style design)
         This is for the training phase.
         """
-        head = values.shape[1]
-        channel = values.shape[2]
-        length = values.shape[3]
+        head = values.shape[-3]
+        channel = values.shape[-2]
+        length = values.shape[-1]
+        node_num = values.shape[1]
         # find top k
         top_k = int(self.factor * math.log(length))
-        mean_value = torch.mean(torch.mean(corr, dim=1), dim=1)
+        mean_value = torch.mean(torch.mean(corr, dim=-2), dim=-2)
         index = torch.topk(torch.mean(mean_value, dim=0), top_k, dim=-1)[1]
-        weights = torch.stack([mean_value[:, index[i]] for i in range(top_k)], dim=-1)
+
+        weights = torch.stack([torch.stack([mean_value[:, j, index[j, i]] for i in range(top_k)], dim=-1) for j in range(node_num)], dim=-2)
+            #     weights = torch.stack(mean_value[:, j, index[i]]
+            # weights = torch.stack([torch.stack([mean_value[:, j, index[i]] for i in range(top_k)], dim=-1)], dim=-2)
         # update corr
         tmp_corr = torch.softmax(weights, dim=-1)
         # aggregation
         tmp_values = values
         delays_agg = torch.zeros_like(values).float()
+
         for i in range(top_k):
-            pattern = torch.roll(tmp_values, -int(index[i]), -1)
+            pattern = []
+            for j in range(node_num):
+                pattern.append(torch.roll(tmp_values[:, j], -int(index[j, i]), -1))
+            pattern = torch.stack(pattern, dim=1)
             delays_agg = delays_agg + pattern * \
-                         (tmp_corr[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, head, channel, length))
+                        (tmp_corr[:, :, i].unsqueeze(2).unsqueeze(2).unsqueeze(2).repeat(1, 1, head, channel, length))
         return delays_agg
 
     def time_delay_agg_inference(self, values, corr):
@@ -216,26 +224,27 @@ class AutoCorrelation(nn.Module):
         This is for the inference phase.
         """
         batch = values.shape[0]
-        head = values.shape[1]
-        channel = values.shape[2]
-        length = values.shape[3]
+        head = values.shape[-3]
+        channel = values.shape[-2]
+        length = values.shape[-1]
+        node_num = values.shape[1]
         # index init
-        init_index = torch.arange(length).unsqueeze(0).unsqueeze(0).unsqueeze(0)\
-            .repeat(batch, head, channel, 1).to(values.device)
+        init_index = torch.arange(length).unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0)\
+            .repeat(batch, node_num, head, channel, 1).to(values.device)
         # find top k
         top_k = int(self.factor * math.log(length))
-        mean_value = torch.mean(torch.mean(corr, dim=1), dim=1)
+        mean_value = torch.mean(torch.mean(corr, dim=-2), dim=-2)
         weights, delay = torch.topk(mean_value, top_k, dim=-1)
         # update corr
         tmp_corr = torch.softmax(weights, dim=-1)
         # aggregation
-        tmp_values = values.repeat(1, 1, 1, 2)
+        tmp_values = values.repeat(1, 1, 1, 1, 2)
         delays_agg = torch.zeros_like(values).float()
         for i in range(top_k):
-            tmp_delay = init_index + delay[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, head, channel, length)
+            tmp_delay = init_index + delay[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, node_num, head, channel, length)
             pattern = torch.gather(tmp_values, dim=-1, index=tmp_delay)
             delays_agg = delays_agg + pattern * \
-                         (tmp_corr[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, head, channel, length))
+                         (tmp_corr[:, i].unsqueeze(1).unsqueeze(1).unsqueeze(1).unsqueeze(1).repeat(1, node_num, head, channel, length))
         return delays_agg
 
     def time_delay_agg_full(self, values, corr):
@@ -243,19 +252,20 @@ class AutoCorrelation(nn.Module):
         Standard version of Autocorrelation
         """
         batch = values.shape[0]
-        head = values.shape[1]
-        channel = values.shape[2]
-        length = values.shape[3]
+        node_num = values.shape[1]
+        head = values.shape[2]
+        channel = values.shape[3]
+        length = values.shape[4]
         # index init
-        init_index = torch.arange(length).unsqueeze(0).unsqueeze(0).unsqueeze(0)\
-            .repeat(batch, head, channel, 1).to(values.device)
+        init_index = torch.arange(length).unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0)\
+            .repeat(batch, node_num, head, channel, 1).to(values.device)
         # find top k
         top_k = int(self.factor * math.log(length))
         weights, delay = torch.topk(corr, top_k, dim=-1)
         # update corr
         tmp_corr = torch.softmax(weights, dim=-1)
         # aggregation
-        tmp_values = values.repeat(1, 1, 1, 2)
+        tmp_values = values.repeat(1, 1, 1, 1, 2)
         delays_agg = torch.zeros_like(values).float()
         for i in range(top_k):
             tmp_delay = init_index + delay[..., i].unsqueeze(-1)
@@ -264,29 +274,32 @@ class AutoCorrelation(nn.Module):
         return delays_agg
 
     def forward(self, queries, keys, values, attn_mask):
-        B, L, H, E = queries.shape
-        _, S, _, D = values.shape
+        B, N, L, H, E = queries.shape
+        _, N, S, _, D = values.shape
+        # starttime = time.perf_counter()
         if L > S:
-            zeros = torch.zeros_like(queries[:, :(L - S), :]).float()
-            values = torch.cat([values, zeros], dim=1)
-            keys = torch.cat([keys, zeros], dim=1)
+            zeros = torch.zeros_like(queries[:, :, :(L - S), :]).float()
+            values = torch.cat([values, zeros], dim=2)
+            keys = torch.cat([keys, zeros], dim=2)
         else:
-            values = values[:, :L, :, :]
-            keys = keys[:, :L, :, :]
+            values = values[:, :, :L, :, :]
+            keys = keys[:, :, :L, :, :]
 
         # period-based dependencies
-        q_fft = torch.fft.rfft(queries.permute(0, 2, 3, 1).contiguous(), dim=-1)
-        k_fft = torch.fft.rfft(keys.permute(0, 2, 3, 1).contiguous(), dim=-1)
+        q_fft = torch.fft.rfft(queries.permute(0, 1, 3, 4, 2).contiguous(), dim=-1)
+        k_fft = torch.fft.rfft(keys.permute(0, 1, 3, 4, 2).contiguous(), dim=-1)
         res = q_fft * torch.conj(k_fft)
         corr = torch.fft.irfft(res, dim=-1)
 
+        # print('start attn agg', time.time())
         # time delay agg
         if self.training:
-            V = self.time_delay_agg_training(values.permute(0, 2, 3, 1).contiguous(), corr).permute(0, 3, 1, 2)
+            V = self.time_delay_agg_full(values.permute(0, 1, 3, 4, 2).contiguous(), corr).permute(0, 1, 4, 2, 3)
         else:
-            V = self.time_delay_agg_inference(values.permute(0, 2, 3, 1).contiguous(), corr).permute(0, 3, 1, 2)
-
-        return V.contiguous(), corr.permute(0, 3, 1, 2)
+            V = self.time_delay_agg_full(values.permute(0, 1, 3, 4, 2).contiguous(), corr).permute(0, 1, 4, 2, 3)
+        # endtime = time.perf_counter()
+        # print('attn time', endtime - starttime)
+        return V.contiguous(), corr.permute(0, 1, 4, 2, 3)
 
 
 class AttentionLayer(nn.Module):
@@ -306,13 +319,13 @@ class AttentionLayer(nn.Module):
         self.mix = mix
 
     def forward(self, queries, keys, values, attn_mask):
-        B, L, _ = queries.shape
-        _, S, _ = keys.shape
+        B, N, L, _ = queries.shape
+        _, N, S, _ = keys.shape
         H = self.n_heads
 
-        queries = self.query_projection(queries).view(B, L, H, -1)
-        keys = self.key_projection(keys).view(B, S, H, -1)
-        values = self.value_projection(values).view(B, S, H, -1)
+        queries = self.query_projection(queries).view(B, N, L, H, -1)
+        keys = self.key_projection(keys).view(B, N, S, H, -1)
+        values = self.value_projection(values).view(B, N, S, H, -1)
 
         out, attn = self.inner_attention(
             queries,
@@ -322,6 +335,6 @@ class AttentionLayer(nn.Module):
         )
         if self.mix:
             out = out.transpose(2,1).contiguous()
-        out = out.view(B, L, -1)  # out的维度应该是[batch_size, seq_len, d_values*n_heads]
+        out = out.view(B, N, L, -1)  # out的维度应该是[batch_size, seq_len, d_values*n_heads]
 
         return self.out_projection(out), attn

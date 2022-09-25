@@ -19,17 +19,18 @@ class PositionalEmbedding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
 
-        pe = pe.unsqueeze(0)
+        pe = pe.unsqueeze(0).unsqueeze(0)  # (1, 1, T_max, d_model)
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return self.pe[:, :x.size(1)]
+        return self.pe[:, :, :x.size(2)]
 
 class TokenEmbedding(nn.Module):
-    def __init__(self, c_in, d_model):
+    def __init__(self, c_in, d_model, num_of_vertices):
         super(TokenEmbedding, self).__init__()
-        self.tokenConv = GCNConv(in_channels=1, out_channels=3)
-        self.linear = nn.Linear(3*c_in, d_model)
+        self.tokenConv = GCNConv(in_channels=d_model, out_channels=d_model)
+        # self.linear = nn.Linear(3*c_in, d_model)
+        self.embedding = torch.nn.Embedding(num_of_vertices, d_model)
         # padding = 1 if torch.__version__>='1.5.0' else 2
         # self.tokenConv = nn.Conv1d(in_channels=c_in, out_channels=d_model,
         #                             kernel_size=3, padding=padding, padding_mode='circular')
@@ -38,16 +39,19 @@ class TokenEmbedding(nn.Module):
         #         nn.init.kaiming_normal_(m.weight,mode='fan_in',nonlinearity='leaky_relu')
 
     def forward(self, x, edge_index, weights):
-        y = x
-        y = torch.unsqueeze(y, 3)
-        y = self.tokenConv(y, edge_index, weights)
-        y = F.relu(y)
-        y = y.reshape(y.shape[0], y.shape[1], y.shape[2]*y.shape[3])
 
-        y = self.linear(y)
+        batch, num_of_vertices, timestamps, _ = x.shape
+        x_indexs = torch.LongTensor(torch.arange(num_of_vertices)).to(x.device)  # (N,)
+        embed = self.embedding(x_indexs).unsqueeze(0)  # (N, d_model)->(1,N,d_model)
+        embed = self.tokenConv(embed, edge_index, weights)
+        embed = embed.unsqueeze(2)
+
+        # y = torch.unsqueeze(y, 3)
+        # y = F.relu(y)
+        # y = y.reshape(y.shape[0], y.shape[1], y.shape[2]*y.shape[3])
+        # y = self.linear(y)
         # x = F.softmax(x, dim=-1)
-        return y
-
+        return embed
 class FixedEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
         super(FixedEmbedding, self).__init__()
@@ -113,24 +117,26 @@ class TimeFeatureEmbedding(nn.Module):
 #         return self.embed(poi_data)
 
 class DataEmbedding(nn.Module):
-    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1, poi=False):
+    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1, poi=False, node_num=0):
         super(DataEmbedding, self).__init__()
 
-        self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
+        self.linear = nn.Linear(c_in, d_model)
+        self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model, num_of_vertices=node_num)
         self.position_embedding = PositionalEmbedding(d_model=d_model)
-        self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type, freq=freq) if embed_type!='timeF' else TimeFeatureEmbedding(d_model=d_model, embed_type=embed_type, freq=freq)
+        # self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type, freq=freq) if embed_type!='timeF' else TimeFeatureEmbedding(d_model=d_model, embed_type=embed_type, freq=freq)
         # if poi is not None:
         #     self.poi_embedding = PoiEmbedding(d_model=d_model)
 
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, x_mark, edge_index, weights):
-
-        x = self.value_embedding(x, edge_index, weights) + self.position_embedding(x) + self.temporal_embedding(x_mark) \
+        x = self.linear(x)
+        x = x + self.position_embedding(x) + self.value_embedding(x, edge_index, weights) \
+            # + self.temporal_embedding(x_mark) \
             # + self.poi_embedding() if self.poi_embedding is not False  \
             # else self.value_embedding(x, edge_index, weights) + self.position_embedding(x) + self.temporal_embedding(x_mark)
         
-        return self.dropout(x)
+        return self.dropout(x.detach())
 
 class DataEmbedding_wo_pos(nn.Module):
     def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
