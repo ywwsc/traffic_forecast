@@ -23,7 +23,7 @@ class PositionalEmbedding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return self.pe[:, :, :x.size(2)]
+        return self.pe[:, :, :x.size(2)].detach()
 
 class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model, num_of_vertices):
@@ -51,7 +51,7 @@ class TokenEmbedding(nn.Module):
         # y = y.reshape(y.shape[0], y.shape[1], y.shape[2]*y.shape[3])
         # y = self.linear(y)
         # x = F.softmax(x, dim=-1)
-        return embed
+        return embed.detach()
 class FixedEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
         super(FixedEmbedding, self).__init__()
@@ -106,7 +106,7 @@ class TimeFeatureEmbedding(nn.Module):
         self.embed = nn.Linear(d_inp, d_model)
     
     def forward(self, x):
-        return self.embed(x)
+        return self.embed(x).unsqueeze(1)
 
 # class PoiEmbedding(nn.Module):
 #     def __init__(self, d_model):
@@ -123,7 +123,7 @@ class DataEmbedding(nn.Module):
         self.linear = nn.Linear(c_in, d_model)
         self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model, num_of_vertices=node_num)
         self.position_embedding = PositionalEmbedding(d_model=d_model)
-        # self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type, freq=freq) if embed_type!='timeF' else TimeFeatureEmbedding(d_model=d_model, embed_type=embed_type, freq=freq)
+        self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type, freq=freq) if embed_type!='timeF' else TimeFeatureEmbedding(d_model=d_model, embed_type=embed_type, freq=freq)
         # if poi is not None:
         #     self.poi_embedding = PoiEmbedding(d_model=d_model)
 
@@ -132,7 +132,7 @@ class DataEmbedding(nn.Module):
     def forward(self, x, x_mark, edge_index, weights):
         x = self.linear(x)
         x = x + self.position_embedding(x) + self.value_embedding(x, edge_index, weights) \
-            # + self.temporal_embedding(x_mark) \
+            + self.temporal_embedding(x_mark) \
             # + self.poi_embedding() if self.poi_embedding is not False  \
             # else self.value_embedding(x, edge_index, weights) + self.position_embedding(x) + self.temporal_embedding(x_mark)
         

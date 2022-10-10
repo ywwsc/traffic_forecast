@@ -18,11 +18,19 @@ class ConvLayer(nn.Module):
         self.maxPool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
 
     def forward(self, x):
+        batch_size, num_of_vertices, num_of_timesteps, in_channels = x.shape
+        x = x.reshape((-1, num_of_timesteps, in_channels))
+        # (b, n, t, f)->(b*n,t,f_in)
+
         x = self.downConv(x.permute(0, 2, 1))
         x = self.norm(x)
         x = self.activation(x)
         x = self.maxPool(x)
-        x = x.transpose(1,2)
+
+        _, _, out_of_timesteps = x.shape
+        x = x.transpose(1, 2).reshape(batch_size,  num_of_vertices, out_of_timesteps, in_channels)
+
+
         return x
 
 class EncoderLayer(nn.Module):
@@ -76,7 +84,7 @@ class Encoder(nn.Module):
                 x, attn = attn_layer(x, norm_adj, attn_mask=attn_mask)
                 x = conv_layer(x)  # 进行Self-attention distilling来减小内存的占用 x:[batch_size, seq_len/2, d_model]
                 attns.append(attn)
-            x, attn = self.attn_layers[-1](x, attn_mask=attn_mask)
+            x, attn = self.attn_layers[-1](x, norm_adj, attn_mask=attn_mask)
             attns.append(attn)
         else:
             for attn_layer in self.attn_layers:

@@ -37,7 +37,7 @@ parser.add_argument('--d_ff', type=int, default=512, help='dimension of fcn')
 parser.add_argument('--moving_avg', type=int, default=25, help='window size of moving average')
 parser.add_argument('--factor', type=int, default=1, help='probsparse attn factor')
 parser.add_argument('--padding', type=int, default=0, help='padding type')
-parser.add_argument('--distil', action='store_false', help='whether to use distilling in encoder, using this argument means not using distilling', default=False)
+parser.add_argument('--distil', action='store_false', help='whether to use distilling in encoder, using this argument means not using distilling', default=True)
 parser.add_argument('--dropout', type=float, default=0.05, help='dropout')
 parser.add_argument('--attn', type=str, default='AutoCor', help='attention used in encoder, options:[prob, full, AutoCor]')
 parser.add_argument('--embed', type=str, default='timeF', help='time features encoding, options:[timeF, fixed, learned]')
@@ -106,10 +106,10 @@ Exp = Exp_Main
 
 for ii in range(args.itr):
     # setting record of experiments
-    setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_ma{}_at{}_fc{}_eb{}_dt{}_mx{}_{}_{}_gdp{}_poi{}'.format(args.model, args.data, args.data_path, args.features,
+    setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_ma{}_at{}_fc{}_eb{}_dt{}_mx{}_{}_{}_gdp{}_poi{}_loss{}'.format(args.model, args.data, args.data_path, args.features,
                 args.seq_len, args.label_len, args.pred_len,
                 args.d_model, args.n_heads, args.e_layers, args.d_layers, args.d_ff, args.moving_avg, args.attn, args.factor,
-                args.embed, args.distil, args.mix, args.des, ii, args.graph_data_path, args.poi)
+                args.embed, args.distil, args.mix, args.des, ii, args.graph_data_path, args.poi, args.loss)
 
     exp = Exp(args) # set experiments
     print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
