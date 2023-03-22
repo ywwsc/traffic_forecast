@@ -241,8 +241,8 @@ class Dataset_wenzhou_60m(Dataset):
         '''
 
 
-        num_train = int(len(df_raw) * 0.8)
-        num_test = int(len(df_raw) * 0.1)
+        num_train = int(len(df_raw) * 0.6)
+        num_test = int(len(df_raw) * 0.2)
         num_vali = len(df_raw) - num_train - num_test
         border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
         border2s = [num_train, num_train + num_vali, len(df_raw)]
@@ -258,10 +258,10 @@ class Dataset_wenzhou_60m(Dataset):
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
-            data = self.scaler.transform(df_data.values)
+            data = self.scaler.transform(df_data.values)[:, :, np.newaxis]
             # data = np.nan_to_num(data)
         else:
-            data = df_data.values
+            data = df_data.values[:, :, np.newaxis]
 
         df_stamp = df_raw[['date']][border1:border2]
         df_stamp = np.array(df_stamp.values)
@@ -282,7 +282,7 @@ class Dataset_wenzhou_60m(Dataset):
 
         self.data_x = data[border1:border2]
         if self.inverse:
-            self.data_y = df_data.values[border1:border2]
+            self.data_y = df_data.values[border1:border2][:, :, np.newaxis]
         else:
             self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
@@ -309,6 +309,255 @@ class Dataset_wenzhou_60m(Dataset):
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
+
+class Dataset_wenzhou_15m(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+        # size [seq_len, label_len, pred_len]
+        # info
+        if size == None:
+            self.seq_len = 24 * 4
+            self.label_len = 24
+            self.pred_len = 24
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.inverse = inverse
+        self.timeenc = timeenc
+        self.freq = freq
+        self.cols = cols
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+        # df_raw = pd.read_csv(os.path.join(self.root_path,
+        #                                   self.data_path))
+        with open(os.path.join(self.root_path, self.data_path), 'r') as load_f:
+            dataset = json.load(load_f)
+        feature = []
+        date = []
+        for time in range(dataset["time_periods"]):
+            feature.append(dataset["feature"][time])
+            date.append(time)
+        np_feature = np.array(feature)
+        np_feature = np_feature[:, :, 1]
+        feature = pd.DataFrame(np_feature)   # (744,2217)
+        # cols_sums = feature.sum(axis=0)
+        # cols_sums = cols_sums.loc[cols_sums[:] < 10].index.tolist()
+        # feature = feature.drop(cols_sums, axis=1)    # （744,1824），数据中存在全为0的坏样本使得后续计算loss时变为nan，去除坏样本（全为0的列）
+
+        feature.insert(loc=0, column='date', value=date)
+        df_raw = feature
+        '''
+        df_raw.columns: ['date', ...(other features), target feature]
+        '''
+
+
+        num_train = int(len(df_raw) * 0.8)
+        num_test = int(len(df_raw) * 0.1)
+        num_vali = len(df_raw) - num_train - num_test
+        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+        border2s = [num_train, num_train + num_vali, len(df_raw)]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+
+        if self.scale:
+            train_data = df_data[border1s[0]:border2s[0]]
+            self.scaler.fit(train_data.values)
+            data = self.scaler.transform(df_data.values)[:, :, np.newaxis]
+            # data = np.nan_to_num(data)
+        else:
+            data = df_data.values[:, :, np.newaxis]
+
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp = np.array(df_stamp.values)//4
+        data_stamp = (df_stamp % 24 - 12) / 24
+        data_stamp_weekend = (df_stamp % (24 * 7) - (12 * 7)) / (24 * 7)
+        data_stamp_weekend = np.squeeze(data_stamp_weekend, axis=1)
+        data_stamp = np.insert(data_stamp, 1, values=data_stamp_weekend, axis=1)
+        data_stamp_month = (df_stamp % (24 * 31) - (12 * 31)) / (24 * 31)
+        data_stamp_month = np.squeeze(data_stamp_month, axis=1)
+        data_stamp = np.insert(data_stamp, 2, values=data_stamp_month, axis=1)
+        data_stamp_year = (df_stamp % (24 * 31 * 12) - (12 * 31 * 12)) / (24 * 31 * 12)
+        data_stamp_year = np.squeeze(data_stamp_year, axis=1)
+        data_stamp = np.insert(data_stamp, 3, values=data_stamp_year, axis=1)
+
+        # df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        # data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
+
+
+        self.data_x = data[border1:border2]
+        if self.inverse:
+            self.data_y = df_data.values[border1:border2][:, :, np.newaxis]
+        else:
+            self.data_y = data[border1:border2]
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data_x[s_begin:s_end]
+        if self.inverse:
+            seq_y = np.concatenate(
+                [self.data_x[r_begin:r_begin + self.label_len], self.data_y[r_begin + self.label_len:r_end]], 0)
+        else:
+            seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
+class Dataset_wenzhou_5m(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, inverse=False, timeenc=0, freq='h', cols=None):
+        # size [seq_len, label_len, pred_len]
+        # info
+        if size == None:
+            self.seq_len = 24 * 4
+            self.label_len = 24
+            self.pred_len = 24
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.inverse = inverse
+        self.timeenc = timeenc
+        self.freq = freq
+        self.cols = cols
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+        # df_raw = pd.read_csv(os.path.join(self.root_path,
+        #                                   self.data_path))
+        with open(os.path.join(self.root_path, self.data_path), 'r') as load_f:
+            dataset = json.load(load_f)
+        feature = []
+        date = []
+        for time in range(dataset["time_periods"]):
+            feature.append(dataset["feature"][time])
+            date.append(time)
+        np_feature = np.array(feature)
+        np_feature = np_feature[:, :, 1]
+        feature = pd.DataFrame(np_feature)   # (744,2217)
+        # cols_sums = feature.sum(axis=0)
+        # cols_sums = cols_sums.loc[cols_sums[:] < 10].index.tolist()
+        # feature = feature.drop(cols_sums, axis=1)    # （744,1824），数据中存在全为0的坏样本使得后续计算loss时变为nan，去除坏样本（全为0的列）
+
+        feature.insert(loc=0, column='date', value=date)
+        df_raw = feature
+        '''
+        df_raw.columns: ['date', ...(other features), target feature]
+        '''
+
+
+        num_train = int(len(df_raw) * 0.8)
+        num_test = int(len(df_raw) * 0.1)
+        num_vali = len(df_raw) - num_train - num_test
+        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+        border2s = [num_train, num_train + num_vali, len(df_raw)]
+        border1 = border1s[self.set_type]
+        border2 = border2s[self.set_type]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[1:]
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+
+        if self.scale:
+            train_data = df_data[border1s[0]:border2s[0]]
+            self.scaler.fit(train_data.values)
+            data = self.scaler.transform(df_data.values)[:, :, np.newaxis]
+            # data = np.nan_to_num(data)
+        else:
+            data = df_data.values[:, :, np.newaxis]
+
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp = np.array(df_stamp.values)//12
+        data_stamp = (df_stamp % 24 - 12) / 24
+        data_stamp_weekend = (df_stamp % (24 * 7) - (12 * 7)) / (24 * 7)
+        data_stamp_weekend = np.squeeze(data_stamp_weekend, axis=1)
+        data_stamp = np.insert(data_stamp, 1, values=data_stamp_weekend, axis=1)
+        data_stamp_month = (df_stamp % (24 * 31) - (12 * 31)) / (24 * 31)
+        data_stamp_month = np.squeeze(data_stamp_month, axis=1)
+        data_stamp = np.insert(data_stamp, 2, values=data_stamp_month, axis=1)
+        data_stamp_year = (df_stamp % (24 * 31 * 12) - (12 * 31 * 12)) / (24 * 31 * 12)
+        data_stamp_year = np.squeeze(data_stamp_year, axis=1)
+        data_stamp = np.insert(data_stamp, 3, values=data_stamp_year, axis=1)
+
+        # df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        # data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
+
+
+        self.data_x = data[border1:border2]
+        if self.inverse:
+            self.data_y = df_data.values[border1:border2][:, :, np.newaxis]
+        else:
+            self.data_y = data[border1:border2]
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data_x[s_begin:s_end]
+        if self.inverse:
+            seq_y = np.concatenate(
+                [self.data_x[r_begin:r_begin + self.label_len], self.data_y[r_begin + self.label_len:r_end]], 0)
+        else:
+            seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
 
 class Dataset_PEMS(Dataset):
     def __init__(self, root_path, flag='train', size=None,

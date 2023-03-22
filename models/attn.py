@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import numpy as np
-
+import os
 from math import sqrt
 from utils.masking import TriangularCausalMask, ProbMask
 
@@ -63,19 +63,33 @@ class FullAttention(nn.Module):
         self.dropout = nn.Dropout(attention_dropout)
         
     def forward(self, queries, keys, values, attn_mask):
-        B, L, H, E = queries.shape  # batch_size, seq_len, head_num, dim_feature
-        _, S, _, D = values.shape
+        B, N, L, H, E = queries.shape  # batch_size, seq_len, head_num, dim_feature
+        _, _, S, _, D = values.shape
+        # batch = values.shape[0]
+        # node_num = values.shape[1]
+        # head = values.shape[2]
+        # channel = values.shape[3]
+        # length = values.shape[4]
         scale = self.scale or 1./sqrt(E)
 
-        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        scores = torch.einsum("bnlhe,bnshe->bnhls", queries, keys)
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
 
-            scores.masked_fill_(attn_mask.mask, -np.inf)
+            scores.masked_fill_(attn_mask.mask.unsqueeze(1).repeat(1,N,1,1,1), -np.inf)
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
-        V = torch.einsum("bhls,bshd->blhd", A, values)
+        if self.mask_flag:
+            attn = A.cpu().detach().numpy()
+            # print('test shape:', attn.shape)
+            # attn result save
+            attn_folder_path = './results/' + 'attn/'
+            if not os.path.exists(attn_folder_path):
+                os.makedirs(attn_folder_path)
+
+            np.save(attn_folder_path + 'decode_attn.npy', attn)
+        V = torch.einsum("bnhls,bnshd->bnlhd", A, values)
         
         if self.output_attention:
             return (V.contiguous(), A)

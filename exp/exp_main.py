@@ -1,4 +1,4 @@
-from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou, Dataset_wenzhou_60m, Dataset_PEMS
+from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred, Dataset_wenzhou, Dataset_wenzhou_60m, Dataset_PEMS, Dataset_wenzhou_5m, Dataset_wenzhou_15m
 from exp.exp_basic import Exp_Basic
 from models.model import Informer, InformerStack, Autoformer
 
@@ -82,7 +82,12 @@ class Exp_Main(Exp_Basic):
             'raw_static_wenzhou_dataset_201401':Dataset_wenzhou,
             'raw_static_wenzhou_dataset_201401_2': Dataset_wenzhou,
             'wenzhou_60m': Dataset_wenzhou_60m,
+            'wenzhou_15m': Dataset_wenzhou_15m,
+            'wenzhou_5m': Dataset_wenzhou_5m,
             'PEMS04': Dataset_PEMS,
+            'PEMS03': Dataset_PEMS,
+            'PEMS07': Dataset_PEMS,
+            'PEMS08': Dataset_PEMS,
         }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed!='timeF' else 1
@@ -137,20 +142,32 @@ class Exp_Main(Exp_Basic):
         self.model.train()
         return total_loss
 
-    def train(self, setting):
-
-        # 邻接矩阵提取
+    def _get_adj(self):
         if self.args.graph_data_path[-3:] == 'csv':
             A = np.zeros((self.args.node_num, self.args.node_num),
                          dtype=np.float32)
-            with open('./data/'+self.args.graph_data_path, 'r') as f:
-                f.readline()
-                reader = csv.reader(f)
-                for row in reader:
-                    if len(row) != 3:
-                        continue
-                    i, j, distance = int(row[0]), int(row[1]), float(row[2])
-                    A[i, j] = 1
+            if self.args.graph_data_path[-5] != '3':
+
+                with open('./data/'+self.args.graph_data_path, 'r') as f:
+                    f.readline()
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if len(row) != 3:
+                            continue
+                        i, j, distance = int(row[0]), int(row[1]), float(row[2])
+                        A[i, j] = 1
+            else:  # PEMS03数据处理
+                with open('./data/PEMS03.txt', 'r') as f:
+                    id_dict = {int(i): idx for idx, i in
+                               enumerate(f.read().strip().split('\n'))}  # 把节点id（idx）映射成从0开始的索引
+                with open('./data/'+self.args.graph_data_path, 'r') as f:
+                    f.readline()  # 略过表头那一行
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if len(row) != 3:
+                            continue
+                        i, j, distance = int(row[0]), int(row[1]), float(row[2])
+                        A[id_dict[i], id_dict[j]] = 1
 
             adj_static = torch.from_numpy(A)
             print('node_num:', A.shape[0])
@@ -162,6 +179,13 @@ class Exp_Main(Exp_Basic):
             weights = dataset["weights"]
             adj_mx = torch.LongTensor(indices)
             weights = torch.FloatTensor(weights)
+
+        return adj_mx, weights
+
+    def train(self, setting):
+
+        # 邻接矩阵提取
+        adj_mx, weights = self._get_adj()
 
 
         train_data, train_loader = self._get_data(flag = 'train')
@@ -237,28 +261,7 @@ class Exp_Main(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
 
         # 邻接矩阵提取
-        if self.args.graph_data_path[-3:] == 'csv':
-            A = np.zeros((self.args.node_num, self.args.node_num),
-                         dtype=np.float32)
-            with open('./data/' + self.args.graph_data_path, 'r') as f:
-                f.readline()
-                reader = csv.reader(f)
-                for row in reader:
-                    if len(row) != 3:
-                        continue
-                    i, j, distance = int(row[0]), int(row[1]), float(row[2])
-                    A[i, j] = 1
-
-            adj_static = torch.from_numpy(A)
-            print('node_num:', A.shape[0])
-            adj_mx, weights = dense_to_sparse(adj_static)
-        else:
-            with open(os.path.join(self.args.root_path, self.args.graph_data_path), 'r') as load_f:
-                dataset = json.load(load_f)
-            indices = dataset["indices"]
-            weights = dataset["weights"]
-            adj_mx = torch.LongTensor(indices)
-            weights = torch.FloatTensor(weights)
+        adj_mx, weights = self._get_adj()
         
         self.model.eval()
         
@@ -351,7 +354,7 @@ class Exp_Main(Exp_Basic):
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
         else:
             if self.args.output_attention:
-                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                outputs, attn = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, edge_index, weights)
             else:
                 if self.args.poi:
                     poi_data = np.load('C:/Users/admin/Desktop/traffic_forecast/data/wenzhou_poi.npy').astype(np.float32)
@@ -364,5 +367,14 @@ class Exp_Main(Exp_Basic):
             outputs = outputs.permute(0, 2, 1).unsqueeze(-1)
         f_dim = -1 if self.args.features=='MS' else 0
         batch_y = batch_y[:,:,-self.args.pred_len:,f_dim:].to(self.device)
+
+        attn = attn[0].cpu().detach().numpy()
+        # print('test shape:', attn.shape)
+       # attn result save
+        attn_folder_path = './results/' + 'attn/'
+        if not os.path.exists(attn_folder_path):
+            os.makedirs(attn_folder_path)
+
+        np.save(attn_folder_path + 'attn.npy', attn)
 
         return outputs, batch_y

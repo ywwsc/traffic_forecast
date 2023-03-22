@@ -18,7 +18,17 @@ def RMSE(pred, true):
     return np.sqrt(MSE(pred, true))
 
 def MAPE(pred, true):
-    return np.mean(np.abs((pred - true) / true))
+    # test_new = []
+    # predict_new = []
+    # for k in range(true.shape[0]):
+    #     if true[k].all != 0:
+    #         test_new.append(true[k])
+    #         predict_new.append(pred[k])
+    #
+    # return np.mean(np.abs((np.array(predict_new) - np.array(test_new)) / np.array(test_new)))
+
+    mape = np.abs((pred - true) / true)
+    return np.mean(mape[np.isfinite(mape)])
 
 def MSPE(pred, true):
     return np.mean(np.square((pred - true) / true))
